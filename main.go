@@ -9,8 +9,8 @@ import (
 
 func getLinesChannel(f io.ReadCloser) <-chan string{
 	lines := make(chan string)
-	defer f.Close()
 	go func() {
+		defer f.Close()
 		curline := ""
 		for {
 			data := make([]byte, 8)
