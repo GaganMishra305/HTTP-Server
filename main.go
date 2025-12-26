@@ -7,33 +7,47 @@ import (
 	"os"
 )
 
-func getLinesChannel(f io.ReadCloser){
-	curline := ""
-	for {
-		data := make([]byte, 8)
+func getLinesChannel(f io.ReadCloser) <-chan string{
+	lines := make(chan string)
+	defer f.Close()
+	go func() {
+		curline := ""
+		for {
+			data := make([]byte, 8)
 
-		n, err := f.Read(data)
-		if err != nil {
-			break
-		}
+			n, err := f.Read(data)
+			if err != nil {
+				break
+			}
 
-		for _, ch := range string(data[:n]) {
-			if ch == '\n' {
-				fmt.Printf("Read: %s \n" , curline)
-				curline = ""
-			} else {
-				curline += string(ch)
+			for _, ch := range string(data[:n]) {
+				if ch == '\n' {
+					lines <- curline
+					curline = ""
+				} else {
+					curline += string(ch)
+				}
 			}
 		}
-	}
+		close(lines)
+	}()
+
+	return lines
 }
 
 func main() {
 	f, err := os.Open("messages.txt")
-	
+
 	if err != nil {
 		log.Fatal("File not there")
 	}
 
-	getLinesChannel(f)
+	lines := getLinesChannel(f)
+	for {
+		val, ok := <-lines
+		if !ok {
+            break
+        }
+        fmt.Println("read:", val)
+	}
 }
