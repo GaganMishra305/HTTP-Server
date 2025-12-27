@@ -7,7 +7,7 @@ import (
 	"net"
 )
 
-func getLinesChannel(f io.ReadCloser) <-chan string{
+func getLinesChannel(f io.ReadCloser) <-chan string {
 	lines := make(chan string)
 	go func() {
 		defer f.Close()
@@ -16,17 +16,21 @@ func getLinesChannel(f io.ReadCloser) <-chan string{
 			data := make([]byte, 8)
 
 			n, err := f.Read(data)
-			if err != nil {
-				break
-			}
-
-			for _, ch := range string(data[:n]) {
-				if ch == '\n' {
-					lines <- curline
-					curline = ""
-				} else {
-					curline += string(ch)
+			if n > 0 {
+				for _, ch := range string(data[:n]) {
+					if ch == '\n' {
+						lines <- curline
+						curline = ""
+					} else if ch != '\r' {
+						curline += string(ch)
+					}
 				}
+			}
+			if err != nil {
+				if curline != "" {
+					lines <- curline
+				}
+				break
 			}
 		}
 		close(lines)
@@ -50,7 +54,9 @@ func main() {
 
 		go func(c net.Conn) {
 			for line := range getLinesChannel(c) {
-				fmt.Println(line)
+				if line != "" {
+					fmt.Println(line)
+				}
 			}
 			log.Println("Connection Closed")
 		}(conn)
