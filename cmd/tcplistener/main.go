@@ -26,6 +26,7 @@ func main() {
 				log.Fatal(err)
 			}
 			fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s", req.RequestLine.Method, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
+			fmt.Println(req.Headers)
 			log.Println("Connection Closed")
 		}(conn)
 

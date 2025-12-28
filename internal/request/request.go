@@ -4,16 +4,19 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"main/internal/headers"
 )
 
 type parserState string
 const (
 	StateInit parserState = "init"
 	StateDone parserState = "done"
+	StateHeaders parserState = "headers"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers headers.Headers
 	state parserState
 }
 
@@ -30,6 +33,7 @@ var SEPARATOR = []byte("\r\n")
 func newRequest() *Request {
 	return &Request{
 		state: StateInit,
+		Headers: *headers.NewHeaders(),
 	}
 }
 
@@ -74,9 +78,11 @@ func (r* Request) parse(data []byte) (int, error) {
 
 outer: 
 	for{
+		currentData := data[read:]
+
 		switch r.state {
 		case StateInit:
-			rl, n, err := parseRequestLine(data[read:])
+			rl, n, err := parseRequestLine(currentData)
 			if err != nil {
 				return 0, err
 			}
@@ -86,8 +92,24 @@ outer:
 			}
 			r.RequestLine = *rl
 			read += n
-			r.state = StateDone
+			r.state = StateHeaders
 
+		case StateHeaders:
+			n, done, err := r.Headers.Parse(currentData)
+			if err != nil {
+				return 0, err
+			}
+
+			if n == 0 {
+				break outer
+			}
+
+			read += n
+			if done {
+				r.state = StateDone
+			}
+
+		
 		case StateDone:
 			break outer
 		}
@@ -103,7 +125,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	request := newRequest()
  
 	// buffer could get overloaded
-	buf := make([]byte, 1024)
+	buf := make([]byte, 2048)
 	bufLen := 0
 	for !request.done() {
 		n, err := reader.Read(buf[bufLen:])
@@ -117,7 +139,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 
-		copy(buf, buf[readn : bufLen])
+		copy(buf, buf[readn : bufLen + readn])
 		bufLen -= readn
 	}
 
