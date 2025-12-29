@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"main/internal/headers"
+	"strconv"
 )
 
 type parserState string
@@ -12,11 +13,13 @@ const (
 	StateInit parserState = "init"
 	StateDone parserState = "done"
 	StateHeaders parserState = "headers"
+	StateBody parserState = "body"
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers headers.Headers
+	Body string
 	state parserState
 }
 
@@ -34,6 +37,7 @@ func newRequest() *Request {
 	return &Request{
 		state: StateInit,
 		Headers: *headers.NewHeaders(),
+		Body: "",
 	}
 }
 
@@ -106,10 +110,28 @@ outer:
 
 			read += n
 			if done {
-				r.state = StateDone
+				r.state = StateBody
 			}
 
-		
+		case StateBody:
+			length := r.Headers.Get("content-length")
+			if length == "" {
+				r.state = StateDone
+				break
+			}
+
+			lenval, _ := strconv.Atoi(length)
+			if lenval == 0 {
+				r.state = StateDone
+				break
+			}
+			remaining := min( lenval - len(r.Body), len(currentData) )
+			r.Body += string(currentData[:remaining])
+			read += remaining
+
+			if len(r.Body) == lenval {
+				r.state = StateDone
+			}
 		case StateDone:
 			break outer
 		}
