@@ -25,9 +25,15 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			fmt.Printf("Request line:\n- Method: %s\n- Target: %s\n- Version: %s", req.RequestLine.Method, req.RequestLine.RequestTarget, req.RequestLine.HttpVersion)
-			fmt.Println(req.Headers)
-			log.Println("Connection Closed")
+			fmt.Printf("Request line:\n")
+			fmt.Printf(" - Method: %s\n", req.RequestLine.Method)
+			fmt.Printf(" - Target: %s\n", req.RequestLine.RequestTarget)
+			fmt.Printf(" - Version: %s\n",req.RequestLine.HttpVersion)
+
+			fmt.Println("Headers:")
+			req.Headers.ForEach(func(n, v string) {
+				fmt.Printf(" - %s: %s\n", n, v)
+			}) 
 		}(conn)
 
 	}
