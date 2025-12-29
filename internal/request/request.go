@@ -4,23 +4,25 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"main/internal/headers"
 	"strconv"
 )
 
 type parserState string
+
 const (
-	StateInit parserState = "init"
-	StateDone parserState = "done"
+	StateInit    parserState = "init"
+	StateDone    parserState = "done"
 	StateHeaders parserState = "headers"
-	StateBody parserState = "body"
+	StateBody    parserState = "body"
 )
 
 type Request struct {
 	RequestLine RequestLine
-	Headers headers.Headers
-	Body string
-	state parserState
+	Headers     headers.Headers
+	Body        string
+	state       parserState
 }
 
 type RequestLine struct {
@@ -35,17 +37,31 @@ var SEPARATOR = []byte("\r\n")
 
 func newRequest() *Request {
 	return &Request{
-		state: StateInit,
+		state:   StateInit,
 		Headers: *headers.NewHeaders(),
-		Body: "",
+		Body:    "",
 	}
+}
+
+func (r *Request) hasBody() bool {
+	length := r.Headers.Get("content-length")
+	if length == "" {
+		return false
+	}
+
+	lenval, _ := strconv.Atoi(length)
+	log.Printf("lenval %v", lenval)
+	if lenval > 0 {
+		return true
+	}
+	return false
 }
 
 func (rl *RequestLine) validHTTP() bool {
 	return rl.HttpVersion == "1.1"
 }
 
-func parseRequestLine(b []byte) (*RequestLine, int, error) {	
+func parseRequestLine(b []byte) (*RequestLine, int, error) {
 	idx := bytes.Index(b, SEPARATOR)
 	if idx == -1 {
 		return nil, 0, nil
@@ -60,14 +76,14 @@ func parseRequestLine(b []byte) (*RequestLine, int, error) {
 	}
 
 	httpParts := bytes.Split(parts[2], []byte("/"))
-	if len(httpParts) != 2 || string(httpParts[0]) != "HTTP"{
+	if len(httpParts) != 2 || string(httpParts[0]) != "HTTP" {
 		return nil, 0, ERROR_MALFORMED_REQUEST_LINE
 	}
 
-	rl := &RequestLine{	
-		Method: string(parts[0]),
-		RequestTarget:string(parts[1]),
-		HttpVersion: string(httpParts[1]),
+	rl := &RequestLine{
+		Method:        string(parts[0]),
+		RequestTarget: string(parts[1]),
+		HttpVersion:   string(httpParts[1]),
 	}
 
 	if !rl.validHTTP() {
@@ -77,13 +93,15 @@ func parseRequestLine(b []byte) (*RequestLine, int, error) {
 	return rl, read, nil
 }
 
-func (r* Request) parse(data []byte) (int, error) {
+func (r *Request) parse(data []byte) (int, error) {
 	read := 0
 
-outer: 
-	for{
+outer:
+	for {
 		currentData := data[read:]
-
+		if len(currentData) == 0 {
+			break outer
+		}
 		switch r.state {
 		case StateInit:
 			rl, n, err := parseRequestLine(currentData)
@@ -110,7 +128,11 @@ outer:
 
 			read += n
 			if done {
-				r.state = StateBody
+				if r.hasBody() {
+					r.state = StateBody
+				} else {
+					r.state = StateDone
+				}
 			}
 
 		case StateBody:
@@ -119,13 +141,13 @@ outer:
 				r.state = StateDone
 				break
 			}
-
 			lenval, _ := strconv.Atoi(length)
 			if lenval == 0 {
 				r.state = StateDone
 				break
 			}
-			remaining := min( lenval - len(r.Body), len(currentData) )
+
+			remaining := min(lenval-len(r.Body), len(currentData))
 			r.Body += string(currentData[:remaining])
 			read += remaining
 
@@ -139,13 +161,13 @@ outer:
 	return read, nil
 }
 
-func (r* Request) done() bool{
+func (r *Request) done() bool {
 	return r.state == StateDone
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
 	request := newRequest()
- 
+
 	// buffer could get overloaded
 	buf := make([]byte, 2048)
 	bufLen := 0
@@ -155,14 +177,15 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 			return nil, err
 		}
 
-		bufLen += n
-		readn, err := request.parse(buf[:bufLen + n])
+		total := bufLen + n
+		readn, err := request.parse(buf[:total])
 		if err != nil {
 			return nil, err
 		}
 
-		copy(buf, buf[readn : bufLen + readn])
-		bufLen -= readn
+		// Shift unconsumed bytes to the front of the buffer.
+		copy(buf, buf[readn:total])
+		bufLen = total - readn
 	}
 
 	return request, nil
